@@ -1,76 +1,147 @@
+Role: You are a precise file-processing agent.
+Constraint: Do not write or show any code. Perform all actions directly using your built-in capabilities and filesystem access.
+Parameters to use (unless I change them):
 
-You are a VS Code workspace agent with permission to:
-- Read all files in the workspace.
-- Create or modify files in the workspace (specifically under an "Output" folder).
-- Generate structured outputs (CSV) exactly as instructed below.
-- Proceed without asking for step-by-step confirmations.
+FOLDER_PATH = "Object Repository"
+OUTPUT_DIR  = "Output"
+ONLY_XPATH  = true (set to false to include all selector keys, not just XPATH)
 
-=== GOAL ===
-Replicate the following workflow across the current workspace WITHOUT writing or running code in the workspace. Work directly with files and content you can read, and create the final CSV files as described.
 
-=== INPUTS ===
-- ROOT_FOLDER: "Object Repository"
-- OUTPUT_DIR: "Output"
+Operational Requirements (follow exactly)
+1) Validate the input folder
 
-=== WHAT TO PRODUCE ===
-Create TWO CSV files under OUTPUT_DIR:
-1) DETAILS CSV at: {OUTPUT_DIR}/{basename(ROOT_FOLDER)}.csv
-   Columns (exact order): File, Object_Name, Identifier, Value
-2) COUNTS CSV at: {OUTPUT_DIR}/{basename(ROOT_FOLDER)}_counter.csv
-   Columns (exact order): Folder, RS_Files_Count
+If FOLDER_PATH is not an existing directory:
 
-=== DETAILED SPECIFICATION ===
-A. Discovery
-1. Recursively enumerate ALL files under ROOT_FOLDER that end with ".rs" (case-insensitive).
-2. If none found, report: "No .rs files found in the specified folder." and stop.
+Output exactly: Invalid folder path!
+Stop immediately (do not create any files).
 
-B. Path handling
-1. Normalize ALL paths to use forward slashes (/).
-2. For the DETAILS CSV 'File' column, use the path RELATIVE to ROOT_FOLDER and REMOVE the ".rs" extension.
-3. For folder listings in the COUNTS CSV, include every directory under ROOT_FOLDER (including ROOT_FOLDER itself and every subdirectory), normalized with forward slashes, as absolute paths or workspace-rooted paths consistently. (Consistency is required across all rows.)
-4. The 'Object_Name' is the leaf file name with the ".rs" extension removed.
 
-C. COUNTS CSV (non-recursive counts)
-1. For each directory under ROOT_FOLDER (including ROOT_FOLDER), count how many ".rs" files are directly inside that directory ONLY (non-recursive).
-2. Write rows in any deterministic order with columns:
-   - Folder
-   - RS_Files_Count
 
-D. DETAILS CSV (XML extraction)
-1. For each ".rs" file:
-   - Treat it as XML.
-   - Find the FIRST occurrence of the element: <webElementProperties>
-   - Within that element, extract:
-     - <name> → Identifier (if absent, use "N/A")
-     - <value> → Value (if absent, use "N/A")
-2. If the file cannot be parsed as XML, skip it and include a note in the final report with the file path and "XML parse error".
-3. Write one row per .rs file with columns:
-   - File (relative path from ROOT_FOLDER, .rs extension removed)
-   - Object_Name (file name without extension)
-   - Identifier (as above)
-   - Value (as above)
+2) Recursively discover .rs files
 
-E. File creation & encoding
-1. Ensure OUTPUT_DIR exists at the workspace root; create it if needed.
-2. Write both CSV files with:
-   - Header row exactly as specified.
-   - Encoding: UTF-8 with BOM (utf-8-sig).
-3. Use commas as delimiters and standard CSV quoting where necessary.
+Walk FOLDER_PATH and all subfolders.
+Collect all files whose names end with .rs (case-insensitive).
+If none are found:
 
-F. Reporting
-At the end, reply with:
-1) A summary:
-   - Number of .rs files found
-   - Number of directories counted
-   - Number of DETAIL rows written
-   - Paths to the two CSV files
-2) Any warnings or errors (e.g., XML parse errors), listing file paths.
+Output exactly: No .rs files found in the specified folder.
+Stop (do not create any files).
 
-=== CONSTRAINTS & BEHAVIOR ===
-- Do NOT generate or run any helper code files in the workspace.
-- Work deterministically; if data is ambiguous, choose a consistent approach and document it in the report.
-- Do not ask for confirmations between steps; proceed and report.
-- If permission is required to create files, request it once, then proceed.
 
-=== EXECUTE NOW ===
-Use ROOT_FOLDER = "Object Repository" and OUTPUT_DIR = "Output". Produce the two CSV files and the final report as specified.
+
+3) Prepare output paths
+
+Ensure OUTPUT_DIR exists (create if needed).
+Let:
+
+file_name = basename(normpath(FOLDER_PATH)); if empty, use "output".
+details_path = join(OUTPUT_DIR, file_name) + ".csv"
+counts_path  = join(OUTPUT_DIR, file_name) + "_counter.csv"
+
+
+
+4) Build directory tree & counts
+
+Create the set of all directories under FOLDER_PATH, including the root and every discovered subfolder.
+Build a children map: parent_directory → [child_directories...].
+Compute counts:
+
+direct_counts[dir] = number of .rs files whose immediate parent is dir.
+recursive_counts[dir] = direct_counts[dir] + the sum of recursive_counts of all descendants (i.e., total under the subtree).
+
+
+These counts must reflect the entire subtree under each directory.
+
+5) Parse each .rs XML and extract selectors
+For each discovered .rs file:
+
+Determine:
+
+abs_file_path = absolute path, normalized to POSIX (/) separators.
+object_name = filename without the .rs extension.
+
+
+Parse the file as XML.
+
+If XML parse fails: output
+XML parse error in <abs_file_path>: <error message>
+Then skip this file.
+If it cannot be read for any other reason: output
+Could not read <abs_file_path>: <error message>
+Then skip this file.
+
+
+Find the node .//selectorCollection; if absent, skip this file.
+For each ./entry within selectorCollection:
+
+key = trimmed text of key element (empty if missing).
+value = trimmed text of value element (empty if missing).
+Skip the entry if key or value is empty.
+If ONLY_XPATH is true, also skip unless key.lower() == "xpath".
+Otherwise, include the entry as-is.
+
+
+
+6) Path normalization (mandatory)
+
+Every file/folder path written to CSVs or printed in final lines must be:
+
+Absolute, and
+Use POSIX / separators (even on Windows).
+
+
+
+7) Produce two CSV files (UTF‑8 with BOM)
+Create both files in UTF‑8 with BOM (UTF‑8‑SIG). No extra blank lines.
+
+
+Details CSV at details_path
+Header: File,Object_Name,Identifier,Value
+Rows: One per qualifying selector entry with:
+
+File         → absolute POSIX path of the .rs file
+Object_Name  → filename without extension
+Identifier   → the selector key (original case)
+Value        → the selector value
+Row order: Keep the natural traversal order (do not sort).
+
+
+
+Counts CSV at counts_path
+Header: Folder,RS_Files_Count
+Rows: One per directory discovered in step 4 with:
+
+Folder         → absolute POSIX path of the directory
+RS_Files_Count → the recursive count of .rs files under it
+Row order: Sort directories lexicographically by their absolute POSIX paths.
+
+
+
+8) Final console messages (exact text)
+After writing the CSVs, output these three lines exactly:
+
+Done. Details rows written: <N>  (<N> = total number of detail rows written)
+Details CSV: <absolute_posix_path_to_details_path>
+Counts  CSV: <absolute_posix_path_to_counts_path>
+
+
+Edge cases & strict behaviors
+
+If FOLDER_PATH is valid but has no .rs files: print the “No .rs files found…” line and do not create CSVs.
+If a .rs file lacks <selectorCollection>, skip it silently (no detail rows).
+If ONLY_XPATH is true, include only entries where the key equals "xpath" ignoring case.
+Include directories with zero recursive .rs files in the counts CSV (count = 0).
+Use UTF‑8 with BOM for both CSVs.
+All printed paths and CSV paths must be absolute POSIX.
+
+
+What to return
+
+Provide both CSV files for download.
+Show the three final console lines exactly as specified.
+
+
+Ready-to-run parameters (you can change these later)
+
+FOLDER_PATH: "Object Repository"
+OUTPUT_DIR: "Output"
+ONLY_XPATH: true

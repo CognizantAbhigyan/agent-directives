@@ -1,9 +1,10 @@
 from pathlib import Path
 import csv
+import sys
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 
-def extract_rs_file_data(folder_path, output_dir, only_xpath=True):
+def extract_rs_file_data(folder_path, output_dir):
     root = Path(folder_path)
     if not root.is_dir():
         print("Invalid folder path!")
@@ -80,8 +81,6 @@ def extract_rs_file_data(folder_path, output_dir, only_xpath=True):
                     value = (entry.findtext("value") or "").strip()
                     if not key or not value:
                         continue
-                    if only_xpath and key.lower() != "xpath":
-                        continue
                     writer.writerow([abs_file, obj_name, key, value])
                     rows_written += 1
 
@@ -110,8 +109,11 @@ def _walk(root: Path):
 
 
 if __name__ == "__main__":
+    folder_path = sys.argv[1]
+    output_dir = sys.argv[2]
     extract_rs_file_data(
-        folder_path="Object Repository",
-        output_dir="Output",
-        only_xpath=True
+        folder_path=folder_path,
+        output_dir=output_dir
     )
+    # python main.py "C:/path/to/rs/files" "C:/path/to/output/dir"
+    

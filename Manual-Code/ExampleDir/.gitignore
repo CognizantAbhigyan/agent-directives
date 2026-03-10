@@ -1,0 +1,54 @@
+# -------------------------
+# Node.js
+# -------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# -------------------------
+# Python
+# -------------------------
+# Virtual environment
+venv/
+.env/
+.venv/
+
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Distribution / build
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Logs
+*.log
+
+# -------------------------
+# TypeScript / TS Build
+# -------------------------
+*.tsbuildinfo
+
+# -------------------------
+# VS Code / IDE settings
+# -------------------------
+.vscode/
+.idea/
+
+# -------------------------
+# System files
+# -------------------------
+.DS_Store
+Thumbs.db
+
+# -------------------------
+# Project-specific folders
+# -------------------------
+Output/
+``
